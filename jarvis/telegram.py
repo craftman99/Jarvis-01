@@ -17,6 +17,10 @@ HELP = """I'm at your service. Just talk to me, or use:
 /reject <id>
 /plan - plan today's content now
 /briefing - today's report
+/videos - process new videos in the YouTube inbox
+/markets - run a paper-trading desk session now
+/portfolio - paper portfolio and P&L
+/halt, /resume - pause or resume paper trading
 /new - start a fresh conversation"""
 
 

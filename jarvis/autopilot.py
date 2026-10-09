@@ -21,6 +21,7 @@ class Autopilot:
         self.memory = jarvis.memory
         self.platforms = jarvis.platforms
         self.notify = notifier or (lambda msg: log.info("NOTIFY: %s", msg))
+        self.trader = jarvis.trader
         self.conversation = Conversation(jarvis)
 
     # ---- jobs --------------------------------------------------------------
@@ -60,6 +61,47 @@ class Autopilot:
         self._nudge_approvals()
         return report
 
+    def video_inbox(self) -> str:
+        if "youtube" not in self.platforms:
+            return "YouTube is not enabled."
+        new = ops.scan_video_inbox(self.settings.youtube_inbox_dir, self.memory.queued_video_files())
+        if not new:
+            return "No new videos."
+        report = self.jarvis.task(
+            f"{len(new)} new video(s) are in the YouTube inbox. Call list_video_inbox, then for each one write "
+            "a strong title, description and tags (use the owner's notes and web_search for what people search "
+            "for), and queue it with create_video_upload at a good time today or tomorrow. Optionally queue a "
+            "short teaser post on the other networks pointing to it."
+        )
+        self._nudge_approvals()
+        return report
+
+    def market_watch(self) -> None:
+        if not self.trader:
+            return
+        alerts = self.trader.watch()
+        if alerts:
+            self.notify("📊 Market alert\n" + "\n".join(alerts))
+
+    def check_exits(self) -> None:
+        if self.trader:
+            self.trader.check_exits()
+
+    def market_desk(self) -> str:
+        if not self.trader:
+            return "Trading is disabled."
+        auto = self.settings.trading.auto_paper_trade
+        return self.jarvis.task(
+            "Run a paper-trading desk session. 1) get_portfolio and review open positions. 2) Check the market "
+            "context (BTC trend, major news via web_search). 3) scan_memecoins and run check_token_risk on the "
+            "2-3 most promising candidates that pass the quick checks. "
+            + ("4) Only if a setup clearly meets the playbook, place_paper_trade with a specific reason, stop "
+               "and target - doing nothing is a fine outcome. " if auto else
+               "4) Don't trade - auto paper trading is off. ")
+            + "5) notify_owner only for something genuinely notable (a strong setup, a scam spreading fast, a big "
+            "move in a holding). End with a 2-line summary."
+        )
+
     def refresh_metrics(self) -> None:
         n = ops.refresh_metrics(self.memory, self.platforms)
         log.info("Refreshed metrics for %s posts", n)
@@ -68,7 +110,10 @@ class Autopilot:
         report = self.jarvis.task(
             "Write the owner's end-of-day briefing (under 200 words, plain text, no markdown tables): what "
             "went out today and how it did, notable conversations, anything pending approval or flagged, and "
-            "2-3 sharp content ideas for tomorrow. Save any durable lesson with remember."
+            "2-3 sharp content ideas for tomorrow."
+            + (" Add a short PAPER trading section: today's trades, P&L, total return, and the lesson of the "
+               "day." if self.trader else "")
+            + " Save any durable lesson with remember."
         )
         self.notify("🗒️ Daily briefing\n\n" + report)
         return report
@@ -96,6 +141,18 @@ class Autopilot:
                 return "\n".join(f"#{i}: {owner.execute('approve_post', {'post_id': i})}" for i in ids) or "Nothing pending."
             if cmd == "/reject" and args:
                 return owner.execute("reject_post", {"post_id": int(args[0]), "reason": " ".join(args[1:]) or None})
+            if cmd == "/portfolio" and self.trader:
+                return format_portfolio(self.trader.snapshot())
+            if cmd == "/halt" and self.trader:
+                self.trader.set_halted(True)
+                return "Paper trading paused. No new buys; stop-losses still run."
+            if cmd == "/resume" and self.trader:
+                self.trader.set_halted(False)
+                return "Paper trading resumed."
+            if cmd == "/markets":
+                return self.market_desk()
+            if cmd == "/videos":
+                return self.video_inbox()
             if cmd == "/plan":
                 return self.plan_day()
             if cmd == "/briefing":
@@ -123,6 +180,14 @@ class Autopilot:
         sched.add_job(self._safe(self.refresh_metrics), "interval", minutes=s.refresh_metrics_every_minutes,
                       id="metrics")
         sched.add_job(self._safe(self.briefing), "cron", **at(s.daily_briefing_at), id="briefing")
+        if "youtube" in self.platforms:
+            sched.add_job(self._safe(self.video_inbox), "interval", minutes=30, id="videos")
+        if self.trader:
+            t = s.trading
+            sched.add_job(self._safe(self.market_watch), "interval", minutes=t.watch_every_minutes, id="watch")
+            sched.add_job(self._safe(self.check_exits), "interval", minutes=5, id="exits")
+            sched.add_job(self._safe(self.market_desk), "interval", minutes=t.memecoin_scan_every_minutes,
+                          id="desk")
         log.info("Jarvis autopilot online - mode=%s dry_run=%s platforms=%s", s.mode, s.dry_run,
                  ", ".join(self.platforms) or "none")
         self.notify(f"🤖 Jarvis online. Mode: {s.mode}{' (dry run)' if s.dry_run else ''}. "
@@ -148,4 +213,19 @@ def format_pending(posts: list[dict]) -> str:
         kind = "reply" if p["reply_to_remote_id"] else "post"
         lines.append(f"#{p['id']} [{p['platform']} {kind}] {p['text']}"
                      + (f"\n   why: {p['rationale']}" if p.get("rationale") else ""))
+    return "\n".join(lines)
+
+
+def format_portfolio(snap: dict) -> str:
+    lines = [f"📒 PAPER portfolio{' (PAUSED)' if snap['halted'] else ''}"]
+    if "total_equity_usd" in snap:
+        lines.append(f"Equity ${snap['total_equity_usd']:,.2f} ({snap['return_pct']:+.2f}%) | "
+                     f"cash ${snap['cash_usd']:,.2f}")
+    lines.append(f"P&L today ${snap['realized_pnl_today_usd']:+,.2f} realized, "
+                 f"${snap['unrealized_pnl_usd']:+,.2f} open")
+    for p in snap["positions"]:
+        lines.append(f"• {p['symbol']} ({p['market']}) ${p['value_usd']:,.2f} {p['pnl_pct']:+.1f}% "
+                     f"[stop -{p['stop_loss_pct']}% / target +{p['take_profit_pct']}%]")
+    if not snap["positions"]:
+        lines.append("No open positions.")
     return "\n".join(lines)

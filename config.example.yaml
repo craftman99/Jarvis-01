@@ -36,6 +36,32 @@ platforms:
   mastodon:  { enabled: false, posts_per_day: 2 }
   facebook:  { enabled: false, posts_per_day: 1 }
   instagram: { enabled: false, posts_per_day: 1 }   # Instagram posts require an image URL
+  youtube:   { enabled: false, posts_per_day: 1 }   # uploads per day; run `jarvis youtube-auth` once
+
+youtube:
+  inbox_dir: "videos"          # drop files in videos/long/ or videos/shorts/ (+ optional notes .txt)
+  privacy: "public"            # public | unlisted | private
+  category_id: "22"            # 22 = People & Blogs, 28 = Science & Tech, 24 = Entertainment, 27 = Education
+
+# Markets section: research, scam checks, alerts and PAPER trading (simulated money at real prices).
+# Jarvis never places real orders. Most memecoins go to zero - use the track record to judge strategies.
+trading:
+  enabled: true
+  crypto_exchange: "kraken"    # where crypto prices come from (kraken, coinbase, binanceus, ...)
+  paper_starting_cash: 1000
+  max_usd_per_trade: 50
+  max_daily_loss_usd: 100      # no new buys once today's losses hit this
+  max_open_positions: 5
+  max_memecoin_exposure_usd: 200
+  default_stop_loss_pct: 15
+  default_take_profit_pct: 40
+  memecoin_chains: [solana, ethereum, base]
+  min_liquidity_usd: 50000     # ignore tokens with less liquidity than this
+  watchlist: ["BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD", "AAPL", "TSLA", "NVDA"]  # stocks need Alpaca keys
+  alert_move_pct: 5            # ping you when a watchlist asset moves this much
+  watch_every_minutes: 15
+  memecoin_scan_every_minutes: 60
+  auto_paper_trade: true       # let Jarvis paper-trade on his own to build a track record
 
 schedule:
   plan_content_at: "07:00"     # daily content planning session

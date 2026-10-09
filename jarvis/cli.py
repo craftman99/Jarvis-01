@@ -24,12 +24,15 @@ def _setup(args):
     from .platforms import build_platforms
     from .telegram import TelegramRemote
 
+    from .markets.trading import Trader
+
     settings = load_settings(args.config)
     memory = Memory(settings.db_path)
     platforms = build_platforms(settings)
     remote = TelegramRemote.from_env()
     notifier = remote.send if remote else None
-    jarvis = Jarvis(settings, memory, platforms, notifier=notifier)
+    trader = Trader(settings, memory, notifier) if settings.trading.enabled else None
+    jarvis = Jarvis(settings, memory, platforms, notifier=notifier, trader=trader)
     return Autopilot(jarvis, notifier=notifier), remote
 
 
@@ -52,7 +55,7 @@ def cmd_chat(args) -> None:
     console.print(f"[bold cyan]JARVIS[/] online. Mode: {s.mode}{' (dry run)' if s.dry_run else ''}. "
                   f"Platforms: {', '.join(autopilot.platforms) or 'none enabled'}.")
     console.print("[dim]Type anything. Commands: /pending /approve <id|all> /reject <id> /plan /briefing "
-                  "/new /quit[/]")
+                  "/videos /markets /portfolio /halt /resume /new /quit[/]")
     while True:
         try:
             text = Prompt.ask(f"[bold]{s.owner_name}[/]").strip()
@@ -105,6 +108,16 @@ def cmd_reject(args) -> None:
     console.print(autopilot.handle_command(f"/reject {args.id}"))
 
 
+def cmd_youtube_auth(args) -> None:
+    from dotenv import load_dotenv
+
+    from .platforms.youtube import authorize
+
+    load_dotenv()
+    authorize(args.secrets)
+    console.print("[green]YouTube connected.[/] Enable it under platforms: in config.yaml.")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="jarvis", description="Your AI social media manager.")
     parser.add_argument("--config", help="path to config.yaml")
@@ -119,6 +132,13 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("publish", help="publish anything that's due now").set_defaults(fn=cmd_once("publish_due"))
     sub.add_parser("briefing", help="get today's briefing").set_defaults(fn=cmd_once("briefing"))
     sub.add_parser("pending", help="show posts awaiting approval").set_defaults(fn=cmd_pending)
+    sub.add_parser("videos", help="process new videos in the YouTube inbox").set_defaults(fn=cmd_once("video_inbox"))
+    sub.add_parser("markets", help="run a paper-trading desk session").set_defaults(fn=cmd_once("market_desk"))
+    sub.add_parser("portfolio", help="show the paper portfolio").set_defaults(
+        fn=lambda a: console.print(_setup(a)[0].handle_command("/portfolio")))
+    p = sub.add_parser("youtube-auth", help="connect your YouTube channel (one-time browser login)")
+    p.add_argument("--secrets", help="path to the OAuth client JSON (default: $YOUTUBE_CLIENT_SECRETS)")
+    p.set_defaults(fn=cmd_youtube_auth)
     p = sub.add_parser("approve", help="approve posts: jarvis approve 3 4 | jarvis approve all")
     p.add_argument("ids", nargs="+")
     p.set_defaults(fn=cmd_approve)

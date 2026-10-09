@@ -140,13 +140,102 @@ TOOL_DEFS = [
     },
 ]
 
-OWNER_ONLY = {"approve_post"}
+VIDEO_TOOL_DEFS = [
+    {
+        "name": "list_video_inbox",
+        "description": "List new video files the owner dropped in the YouTube inbox (long videos and Shorts) "
+                       "that haven't been queued yet, with any notes the owner wrote about each.",
+        "input_schema": _obj({}, []),
+    },
+    {
+        "name": "create_video_upload",
+        "description": (
+            "Queue a YouTube upload for a video from the inbox. Write a search-friendly title (under 70 chars, "
+            "hook first, no clickbait lies), a description (first 2 lines matter most; add chapters only if the "
+            "owner's notes give timestamps), and 5-15 tags. Follows the same approval rules as posts."),
+        "input_schema": _obj({
+            "file": {**_STR, "description": "Exact file path from list_video_inbox."},
+            "title": _STR,
+            "description": _STR,
+            "tags": {"type": "array", "items": _STR},
+            "publish_at": {**_STR, "description": "'now' or a local date-time like '2026-10-10T17:00'."},
+            "rationale": _STR,
+            "owner_confirmed": {"type": "boolean", "description": "Same rule as create_post."},
+        }, ["file", "title", "description", "tags", "publish_at", "rationale"]),
+    },
+]
+
+_CHAIN = {"type": "string", "enum": ["solana", "ethereum", "base"]}
+
+TRADING_TOOL_DEFS = [
+    {
+        "name": "market_quotes",
+        "description": "Live prices and 24h change for stocks (tickers like NVDA) and exchange crypto pairs "
+                       "(like BTC/USD, DOGE/USD).",
+        "input_schema": _obj({"assets": {"type": "array", "items": _STR}}, ["assets"]),
+    },
+    {
+        "name": "scan_memecoins",
+        "description": "Find newly listed / trending on-chain tokens with price, liquidity, volume, age and "
+                       "quick red flags. Use check_token_risk before considering any of them.",
+        "input_schema": _obj({"chain": _CHAIN, "limit": _INT}, []),
+    },
+    {
+        "name": "search_token",
+        "description": "Search on-chain tokens by name, symbol or address.",
+        "input_schema": _obj({"query": _STR}, ["query"]),
+    },
+    {
+        "name": "check_token_risk",
+        "description": "Full scam/rug-pull check for an on-chain token: honeypot, taxes, mint/freeze authority, "
+                       "holder concentration, locked liquidity, market structure. Returns a risk score and verdict.",
+        "input_schema": _obj({"chain": _CHAIN, "address": _STR}, ["chain", "address"]),
+    },
+    {
+        "name": "get_portfolio",
+        "description": "The PAPER portfolio: positions with live P&L, cash, realized P&L, return, and risk limits.",
+        "input_schema": _obj({}, []),
+    },
+    {
+        "name": "place_paper_trade",
+        "description": (
+            "Simulated buy or sell at the live market price (no real money). Hard limits (per-trade size, daily "
+            "loss, open positions, memecoin exposure, scam check) are enforced in code, and every buy gets a "
+            "stop-loss and take-profit. For a sell, omit usd_amount to close the whole position. Always give a "
+            "concrete reason tied to your strategy - the journal is how the owner judges it."),
+        "input_schema": _obj({
+            "market": {"type": "string", "enum": ["stock", "crypto", "dex"],
+                       "description": "stock (AAPL), crypto exchange pair (DOGE/USD), or dex (on-chain token)"},
+            "asset": {**_STR, "description": "Ticker, exchange pair, or token contract address."},
+            "side": {"type": "string", "enum": ["buy", "sell"]},
+            "usd_amount": {"type": "number"},
+            "chain": {**_CHAIN, "description": "Required for dex tokens."},
+            "reason": _STR,
+            "stop_loss_pct": {"type": "number"},
+            "take_profit_pct": {"type": "number"},
+        }, ["market", "asset", "side", "reason"]),
+    },
+    {
+        "name": "trade_history",
+        "description": "Recent paper trades with their reasons.",
+        "input_schema": _obj({"limit": _INT}, []),
+    },
+    {
+        "name": "set_trading_halt",
+        "description": "Pause paper trading: halted=true blocks new buys (stop-loss/take-profit exits still run); "
+                       "false resumes. Only when the owner asks.",
+        "input_schema": _obj({"halted": {"type": "boolean"}}, ["halted"]),
+    },
+]
+
+OWNER_ONLY = {"approve_post", "set_trading_halt"}
 
 
 class Toolbox:
     def __init__(self, settings: Settings, memory: Memory, platforms: dict[str, Platform],
-                 owner_present: bool, notifier: Callable[[str], None] | None = None):
+                 owner_present: bool, notifier: Callable[[str], None] | None = None, trader=None):
         self.settings = settings
+        self.trader = trader if (trader is not None and settings.trading.enabled) else None
         self.memory = memory
         self.platforms = platforms
         self.owner_present = owner_present
@@ -154,7 +243,12 @@ class Toolbox:
         self._replies_this_run = 0
 
     def definitions(self) -> list[dict]:
-        tools = [t for t in TOOL_DEFS if self.owner_present or t["name"] not in OWNER_ONLY]
+        tools = list(TOOL_DEFS)
+        if "youtube" in self.platforms:
+            tools += VIDEO_TOOL_DEFS
+        if self.trader:
+            tools += TRADING_TOOL_DEFS
+        tools = [t for t in tools if self.owner_present or t["name"] not in OWNER_ONLY]
         return tools + [WEB_SEARCH]
 
     def execute(self, name: str, tool_input: dict) -> str:
@@ -164,10 +258,15 @@ class Toolbox:
         handler = getattr(self, f"tool_{name}", None)
         if handler is None or not isinstance(tool_input, dict):
             raise ToolError(f"unknown tool or malformed input: {name}")
+        from .markets.data import MarketDataError
+        from .markets.trading import TradeError
+
         try:
             result = handler(**tool_input)
         except TypeError as exc:
             raise ToolError(f"bad arguments for {name}: {exc}") from exc
+        except (TradeError, MarketDataError) as exc:
+            raise ToolError(str(exc)) from exc
         return result if isinstance(result, str) else json.dumps(result, default=str)
 
     # ---- helpers -----------------------------------------------------------
@@ -188,6 +287,19 @@ class Toolbox:
         if dt < utcnow() - timedelta(minutes=5):
             raise ToolError("publish_at is in the past")
         return dt
+
+    def _held(self) -> set[str]:
+        return self.trader.held_symbols() if self.trader else set()
+
+    def _check_quota(self, platform: str, when: datetime) -> None:
+        if self.owner_present:  # daily quota only binds Jarvis acting on its own
+            return
+        local = when.astimezone(self.settings.tz)
+        start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+        used = self.memory.count_original_posts_between(platform, start, start + timedelta(days=1))
+        quota = self.settings.platforms[platform].posts_per_day
+        if used >= quota:
+            raise ToolError(f"daily quota reached for {platform} on {local.date()} ({used}/{quota})")
 
     def _status_for(self, owner_confirmed: bool | None) -> str:
         if self.owner_present and owner_confirmed:
@@ -217,19 +329,14 @@ class Toolbox:
 
     def tool_create_post(self, platform: str, text: str, publish_at: str, rationale: str,
                          media_url: str | None = None, owner_confirmed: bool | None = None) -> dict:
+        if platform == "youtube":
+            raise ToolError("YouTube posts are video uploads - use list_video_inbox and create_video_upload")
         p = self._platform(platform)
-        problems = ops.check_text(p, text, self.settings.avoid, media_url)
+        problems = ops.check_text(p, text, self.settings.avoid, media_url, self._held())
         if problems:
             raise ToolError("post rejected by guardrails: " + "; ".join(problems))
         when = self._parse_time(publish_at)
-
-        if not self.owner_present:  # daily quota only binds Jarvis acting on its own
-            local = when.astimezone(self.settings.tz)
-            start = local.replace(hour=0, minute=0, second=0, microsecond=0)
-            used = self.memory.count_original_posts_between(platform, start, start + timedelta(days=1))
-            quota = self.settings.platforms[platform].posts_per_day
-            if used >= quota:
-                raise ToolError(f"daily quota reached for {platform} on {local.date()} ({used}/{quota})")
+        self._check_quota(platform, when)
 
         post_id = self.memory.add_post(platform, text, self._status_for(owner_confirmed),
                                        media_url=media_url, scheduled_at=when, rationale=rationale)
@@ -248,8 +355,9 @@ class Toolbox:
         if text is not None or media_url is not None:
             new_text = text if text is not None else post["text"]
             new_media = media_url if media_url is not None else post["media_url"]
+            needs_media = not post["reply_to_remote_id"] and not post.get("meta")
             problems = ops.check_text(self._platform(post["platform"]), new_text, self.settings.avoid,
-                                      None if post["reply_to_remote_id"] else new_media)
+                                      new_media if needs_media else "n/a", self._held())
             if problems:
                 raise ToolError("edit rejected by guardrails: " + "; ".join(problems))
             fields.update(text=new_text, media_url=new_media)
@@ -291,7 +399,7 @@ class Toolbox:
                 raise ToolError("auto_reply is disabled in config; flag it for the owner instead")
             if self._replies_this_run >= self.settings.max_replies_per_run:
                 raise ToolError("reply limit for this run reached; leave the rest for the next run")
-        problems = ops.check_text(self._platform(inter["platform"]), text, self.settings.avoid)
+        problems = ops.check_text(self._platform(inter["platform"]), text, self.settings.avoid, "n/a", self._held())
         if problems:
             raise ToolError("reply rejected by guardrails: " + "; ".join(problems))
         self._replies_this_run += 1
@@ -338,3 +446,101 @@ class Toolbox:
     def tool_notify_owner(self, message: str) -> str:
         self.notifier(message)
         return "sent"
+
+    # ---- YouTube -----------------------------------------------------------------
+    def tool_list_video_inbox(self) -> list[dict]:
+        return ops.scan_video_inbox(self.settings.youtube_inbox_dir, self.memory.queued_video_files())
+
+    def tool_create_video_upload(self, file: str, title: str, description: str, tags: list[str], publish_at: str,
+                                 rationale: str, owner_confirmed: bool | None = None) -> dict:
+        inbox = {v["file"]: v for v in self.tool_list_video_inbox()}
+        if file not in inbox:
+            raise ToolError(f"{file} is not a new video in the inbox; call list_video_inbox")
+        if not title.strip() or len(title) > 100:
+            raise ToolError("title must be 1-100 characters")
+        if any(c in title + description for c in "<>"):
+            raise ToolError("YouTube doesn't allow < or > in titles/descriptions")
+        problems = ops.check_text(self._platform("youtube"), f"{title}\n{description}", self.settings.avoid,
+                                  "n/a", self._held())
+        if problems:
+            raise ToolError("upload rejected by guardrails: " + "; ".join(problems))
+        when = self._parse_time(publish_at)
+        self._check_quota("youtube", when)
+        meta = {"file": file, "title": title, "tags": [t[:100] for t in tags][:30],
+                "is_short": inbox[file]["is_short"]}
+        post_id = self.memory.add_post("youtube", description, self._status_for(owner_confirmed),
+                                       scheduled_at=when, rationale=f"{title} - {rationale}", meta=meta)
+        return self._publish_if_due(post_id)
+
+    # ---- markets (research + paper trading) -------------------------------------------
+    def tool_market_quotes(self, assets: list[str]) -> dict:
+        from dataclasses import asdict
+
+        from .markets import data
+
+        stocks = [a.upper() for a in assets if data.market_of(a) == "stock"]
+        cryptos = [a.upper() for a in assets if data.market_of(a) == "crypto"]
+        out, errors = [], []
+        if stocks:
+            try:
+                out += [asdict(q) for q in data.stock_quotes(stocks)]
+            except data.MarketDataError as exc:
+                errors.append(str(exc))
+        for pair in cryptos:
+            try:
+                out += [asdict(q) for q in data.crypto_quotes([pair], self.settings.trading.crypto_exchange)]
+            except data.MarketDataError as exc:
+                errors.append(str(exc))
+        return {"quotes": out, "errors": errors}
+
+    def tool_scan_memecoins(self, chain: str | None = None, limit: int = 15) -> list[dict]:
+        from .markets import data, risk
+
+        chains = [chain] if chain else self.settings.trading.memecoin_chains
+        found = data.new_tokens(chains, limit=min(limit, 30))
+        out = []
+        for c in chains:
+            addrs = [t["address"] for t in found if t["chain"] == c]
+            if not addrs:
+                continue
+            for q in data.token_quotes(c, addrs):
+                red, warn = risk.market_flags(q, self.settings.trading.min_liquidity_usd)
+                out.append({"symbol": q.symbol, "chain": c, "address": q.asset, "price_usd": q.price,
+                            "liquidity_usd": q.extra.get("liquidity_usd"), "market_cap": q.extra.get("market_cap"),
+                            "volume_24h_usd": q.volume_24h_usd, "change_1h_pct": q.extra.get("change_1h_pct"),
+                            "change_24h_pct": q.change_24h_pct, "age_hours": q.extra.get("age_hours"),
+                            "quick_red_flags": red, "quick_warnings": warn})
+        return out
+
+    def tool_search_token(self, query: str) -> list[dict]:
+        from .markets import data
+
+        return [{"symbol": q.symbol, "name": q.extra.get("name"), "chain": q.extra.get("chain"),
+                 "address": q.asset, "price_usd": q.price, "liquidity_usd": q.extra.get("liquidity_usd"),
+                 "volume_24h_usd": q.volume_24h_usd} for q in data.search_tokens(query)]
+
+    def tool_check_token_risk(self, chain: str, address: str) -> dict:
+        from .markets import risk
+
+        q = self.trader.quote("dex", address, chain)
+        return risk.assess_token(chain, address, q, self.settings.trading.min_liquidity_usd)
+
+    def tool_get_portfolio(self) -> dict:
+        return self.trader.snapshot() | {"limits": self.trader.limits()}
+
+    def tool_place_paper_trade(self, market: str, asset: str, side: str, reason: str,
+                               usd_amount: float | None = None, chain: str | None = None,
+                               stop_loss_pct: float | None = None, take_profit_pct: float | None = None) -> dict:
+        if not self.owner_present and side == "buy" and not self.settings.trading.auto_paper_trade:
+            raise ToolError("auto_paper_trade is off - suggest the trade to the owner instead")
+        return self.trader.place(market, asset, side, usd_amount, reason, chain=chain,
+                                 stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct)
+
+    def tool_trade_history(self, limit: int = 20) -> list[dict]:
+        rows = self.memory.list_trades("paper", limit=100000)[-min(limit, 100):]
+        return [{k: r[k] for k in ("id", "market", "symbol", "side", "usd", "price", "status", "reason",
+                                   "created_at", "error") if r.get(k) is not None} for r in reversed(rows)]
+
+    def tool_set_trading_halt(self, halted: bool) -> str:
+        self.trader.set_halted(halted)
+        return "Paper trading paused - no new buys." if halted else "Paper trading resumed."

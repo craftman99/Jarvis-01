@@ -16,6 +16,7 @@ _REGISTRY = {
     "mastodon": ("jarvis.platforms.mastodon", "MastodonPlatform", 500, False),
     "facebook": ("jarvis.platforms.meta", "FacebookPlatform", 5000, False),
     "instagram": ("jarvis.platforms.meta", "InstagramPlatform", 2200, True),
+    "youtube": ("jarvis.platforms.youtube", "YouTubePlatform", 5000, True),
 }
 
 
@@ -31,7 +32,9 @@ def build_platforms(settings: Settings) -> dict[str, Platform]:
             continue
         try:
             cls = getattr(importlib.import_module(module_path), cls_name)
-            platforms[name] = cls()
+            kwargs = ({"privacy": settings.youtube_privacy, "category_id": settings.youtube_category_id}
+                      if name == "youtube" else {})
+            platforms[name] = cls(**kwargs)
             log.info("Connected to %s", name)
         except Exception as exc:  # missing SDK, bad credentials, network...
             log.warning("Could not connect to %s (%s) - using dry-run mode for it.", name, exc)

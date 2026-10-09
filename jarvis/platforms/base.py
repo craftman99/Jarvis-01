@@ -83,6 +83,11 @@ class DryRunPlatform(Platform):
         log.info("[DRY RUN] %s reply to %s: %s", self.name, remote_id, text)
         return PublishResult(remote_id=rid)
 
+    def upload_video(self, description: str, meta: dict) -> PublishResult:
+        rid = f"dry-{self.name}-{next(self._ids)}"
+        log.info("[DRY RUN] %s upload %s: %r from %s", self.name, rid, meta.get("title"), meta.get("file"))
+        return PublishResult(remote_id=rid)
+
     def fetch_interactions(self) -> list[Interaction]:
         return []
 

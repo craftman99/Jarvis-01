@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import yaml
 from dotenv import load_dotenv
 
-PLATFORM_NAMES = ("x", "bluesky", "mastodon", "facebook", "instagram")
+PLATFORM_NAMES = ("x", "bluesky", "mastodon", "facebook", "instagram", "youtube")
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 
@@ -18,6 +18,26 @@ EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 class PlatformSettings:
     enabled: bool = False
     posts_per_day: int = 1
+
+
+@dataclass
+class TradingSettings:
+    enabled: bool = True
+    crypto_exchange: str = "kraken"    # any ccxt exchange id (prices only)
+    paper_starting_cash: float = 1000.0
+    max_usd_per_trade: float = 50.0
+    max_daily_loss_usd: float = 100.0
+    max_open_positions: int = 5
+    max_memecoin_exposure_usd: float = 200.0
+    default_stop_loss_pct: float = 15.0
+    default_take_profit_pct: float = 40.0
+    memecoin_chains: list[str] = field(default_factory=lambda: ["solana", "ethereum", "base"])
+    min_liquidity_usd: float = 50000.0
+    watchlist: list[str] = field(default_factory=lambda: ["BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD"])
+    alert_move_pct: float = 5.0
+    watch_every_minutes: int = 15
+    memecoin_scan_every_minutes: int = 60
+    auto_paper_trade: bool = True
 
 
 @dataclass
@@ -44,6 +64,10 @@ class Settings:
     auto_reply: bool = True
     max_replies_per_run: int = 10
     db_path: str = "data/jarvis.db"
+    youtube_inbox_dir: str = "videos"
+    youtube_privacy: str = "public"
+    youtube_category_id: str = "22"
+    trading: TradingSettings = field(default_factory=TradingSettings)
 
     @property
     def tz(self) -> ZoneInfo:
@@ -70,16 +94,26 @@ def load_settings(path: str | os.PathLike | None = None) -> Settings:
     schedule = raw.pop("schedule", {}) or {}
     engagement = raw.pop("engagement", {}) or {}
     platforms_raw = raw.pop("platforms", {}) or {}
+    youtube = {f"youtube_{k}": v for k, v in (raw.pop("youtube", {}) or {}).items()}
+    trading_raw = raw.pop("trading", {}) or {}
 
     known = set(Settings.__dataclass_fields__)
     settings = Settings(**{k: v for k, v in raw.items() if k in known})
-    for k, v in {**schedule, **engagement}.items():
+    for k, v in {**schedule, **engagement, **youtube}.items():
         if k in known:
             setattr(settings, k, v)
 
     settings.platforms = {
         name: PlatformSettings(**(platforms_raw.get(name) or {})) for name in PLATFORM_NAMES
     }
+
+    trading_known = set(TradingSettings.__dataclass_fields__)
+    unknown = set(trading_raw) - trading_known
+    if unknown:
+        raise ValueError(f"unknown trading settings: {sorted(unknown)}")
+    settings.trading = TradingSettings(**trading_raw)
+    if settings.youtube_privacy not in ("public", "unlisted", "private"):
+        raise ValueError("youtube.privacy must be public, unlisted or private")
 
     if settings.mode not in ("review", "autopilot"):
         raise ValueError(f"mode must be 'review' or 'autopilot', got {settings.mode!r}")
