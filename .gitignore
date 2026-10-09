@@ -8,3 +8,4 @@ data/
 .venv/
 client_secret*.json
 videos/
+screenshots/

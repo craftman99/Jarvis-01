@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -16,21 +17,22 @@ from rich.prompt import Prompt
 console = Console()
 
 
-def _setup(args):
+def _setup(args, wrap_notifier=None):
     from .autopilot import Autopilot
     from .brain import Jarvis
     from .config import load_settings
+    from .markets.trading import Trader
     from .memory import Memory
     from .platforms import build_platforms
     from .telegram import TelegramRemote
-
-    from .markets.trading import Trader
 
     settings = load_settings(args.config)
     memory = Memory(settings.db_path)
     platforms = build_platforms(settings)
     remote = TelegramRemote.from_env()
     notifier = remote.send if remote else None
+    if wrap_notifier:
+        notifier = wrap_notifier(notifier)
     trader = Trader(settings, memory, notifier) if settings.trading.enabled else None
     jarvis = Jarvis(settings, memory, platforms, notifier=notifier, trader=trader)
     return Autopilot(jarvis, notifier=notifier), remote
@@ -108,6 +110,31 @@ def cmd_reject(args) -> None:
     console.print(autopilot.handle_command(f"/reject {args.id}"))
 
 
+def cmd_web(args) -> None:
+    import os
+    from collections import deque
+
+    import uvicorn
+
+    from .web.server import create_app, make_feed_notifier
+
+    password = os.environ.get("JARVIS_WEB_PASSWORD") or None
+    local_only = args.host in ("127.0.0.1", "localhost", "::1")
+    if password is None and not local_only:
+        console.print("[red]Refusing to open Jarvis to the network without a password.[/] "
+                      "Set JARVIS_WEB_PASSWORD in .env (or use --host 127.0.0.1).")
+        sys.exit(1)
+    feed: deque = deque(maxlen=200)
+    autopilot, remote = _setup(args, wrap_notifier=lambda fwd: make_feed_notifier(feed, fwd))
+    if remote and not args.no_autopilot:
+        remote.start(autopilot.handle_command)
+    app = create_app(autopilot, password, feed, run_scheduler=not args.no_autopilot)
+    url = f"http://{'localhost' if local_only or args.host == '0.0.0.0' else args.host}:{args.port}"
+    console.print(f"[bold cyan]JARVIS[/] dashboard at [link={url}]{url}[/link]"
+                  + ("" if password else " [dim](no password - local access only)[/]"))
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+
+
 def cmd_youtube_auth(args) -> None:
     from dotenv import load_dotenv
 
@@ -136,6 +163,12 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("markets", help="run a paper-trading desk session").set_defaults(fn=cmd_once("market_desk"))
     sub.add_parser("portfolio", help="show the paper portfolio").set_defaults(
         fn=lambda a: console.print(_setup(a)[0].handle_command("/portfolio")))
+    p = sub.add_parser("web", help="open the web dashboard (and run autopilot in the background)")
+    p.add_argument("--host", default=os.environ.get("JARVIS_HOST", "127.0.0.1"),
+                   help="127.0.0.1 = this computer only; 0.0.0.0 = reachable from other devices/servers")
+    p.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
+    p.add_argument("--no-autopilot", action="store_true", help="dashboard only, don't run scheduled jobs")
+    p.set_defaults(fn=cmd_web)
     p = sub.add_parser("youtube-auth", help="connect your YouTube channel (one-time browser login)")
     p.add_argument("--secrets", help="path to the OAuth client JSON (default: $YOUTUBE_CLIENT_SECRETS)")
     p.set_defaults(fn=cmd_youtube_auth)

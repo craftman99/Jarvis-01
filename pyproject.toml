@@ -16,6 +16,9 @@ dependencies = [
   "requests>=2.31",
   "rich>=13.0",
   "ccxt>=4.0",
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -25,7 +28,7 @@ mastodon = ["Mastodon.py>=1.8"]
 youtube = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.2"]
 all = ["tweepy>=4.14", "atproto>=0.0.55", "Mastodon.py>=1.8",
        "google-api-python-client>=2.100", "google-auth-oauthlib>=1.2"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "httpx>=0.27"]
 
 [project.scripts]
 jarvis = "jarvis.cli:main"
@@ -34,4 +37,4 @@ jarvis = "jarvis.cli:main"
 include = ["jarvis*"]
 
 [tool.setuptools.package-data]
-jarvis = ["knowledge/*.md"]
+jarvis = ["knowledge/*.md", "web/static/*"]

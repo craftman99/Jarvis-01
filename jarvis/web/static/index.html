@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jarvis Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Ccircle cx=%2216%22 cy=%2216%22 r=%2214%22 fill=%22%2307101f%22 stroke=%22%2338d6ff%22 stroke-width=%223%22/%3E%3Ccircle cx=%2216%22 cy=%2216%22 r=%225%22 fill=%22%2338d6ff%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="reactor" id="reactor"></div>
+      <div><h1>JARVIS</h1><small id="brand-sub">Social &amp; markets assistant</small></div>
+    </div>
+    <nav id="nav">
+      <a href="#overview" data-page="overview"><span class="ico">◎</span>Overview</a>
+      <a href="#chat" data-page="chat"><span class="ico">✦</span>Talk to Jarvis</a>
+      <a href="#approvals" data-page="approvals"><span class="ico">✓</span>Approvals <span class="badge" id="b-pending"></span></a>
+      <a href="#content" data-page="content"><span class="ico">▤</span>Content</a>
+      <a href="#inbox" data-page="inbox"><span class="ico">✉</span>Inbox <span class="badge" id="b-inbox"></span></a>
+      <a href="#youtube" data-page="youtube"><span class="ico">▶</span>YouTube</a>
+      <a href="#markets" data-page="markets"><span class="ico">↗</span>Markets</a>
+    </nav>
+    <footer>
+      <div id="foot-status"></div>
+      <button id="logout">Sign out</button>
+    </footer>
+  </aside>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section id="page-overview" class="page">
+      <div class="page-head">
+        <div><h2 id="greeting">Welcome back.</h2><p id="status-line" class="muted"></p></div>
+        <div class="row" id="status-pills"></div>
+      </div>
+      <div class="grid stats" id="stats"></div>
+      <div class="grid two" style="margin-top:16px">
+        <div class="card">
+          <h3>Quick actions</h3>
+          <div class="row">
+            <button class="btn primary" data-job="plan">✦ Plan today's content</button>
+            <button class="btn" data-job="engage">✉ Check mentions</button>
+            <button class="btn" data-job="briefing">🗒 Daily briefing</button>
+            <button class="btn" data-job="markets">↗ Market desk</button>
+            <button class="btn" data-job="videos">▶ Process videos</button>
+          </div>
+          <div id="job-result" class="result muted"></div>
+        </div>
+        <div class="card">
+          <h3>Connected platforms</h3>
+          <div id="platforms" class="list"></div>
+        </div>
+      </div>
+      <div class="grid two" style="margin-top:16px">
+        <div class="card"><h3>Activity</h3><div class="feed" id="feed"></div></div>
+        <div class="card"><h3>Coming up</h3><div id="jobs" class="list"></div></div>
+      </div>
+    </section>
+
+    <!-- CHAT -->
+    <section id="page-chat" class="page hidden">
+      <div class="page-head">
+        <div><h2>Talk to Jarvis</h2><p>Ask for posts, edits, research, ideas, or market checks.</p></div>
+        <button class="btn small" id="chat-reset">New conversation</button>
+      </div>
+      <div class="chat">
+        <div class="messages" id="messages"></div>
+        <div class="suggestions" id="suggestions">
+          <button>Write 3 posts for tomorrow about my main topics</button>
+          <button>What performed best this week?</button>
+          <button>Draft replies to my new mentions</button>
+          <button>Scan new Solana memecoins and flag scams</button>
+          <button>How's the paper portfolio doing?</button>
+        </div>
+        <form class="composer" id="composer">
+          <textarea id="input" placeholder="Message Jarvis… (Enter to send, Shift+Enter for a new line)" rows="1"></textarea>
+          <button class="btn primary" id="send">Send</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- APPROVALS -->
+    <section id="page-approvals" class="page hidden">
+      <div class="page-head">
+        <div><h2>Approvals</h2><p>Nothing goes public until you approve it.</p></div>
+        <button class="btn good" id="approve-all">Approve all</button>
+      </div>
+      <div class="list" id="approvals"></div>
+    </section>
+
+    <!-- CONTENT -->
+    <section id="page-content" class="page hidden">
+      <div class="page-head"><div><h2>Content</h2><p>Everything Jarvis has written, scheduled and published.</p></div></div>
+      <div class="tabs" id="content-tabs">
+        <button data-status="" class="active">All</button>
+        <button data-status="scheduled">Scheduled</button>
+        <button data-status="published">Published</button>
+        <button data-status="failed">Failed</button>
+        <button data-status="rejected">Rejected</button>
+      </div>
+      <div class="list" id="content"></div>
+    </section>
+
+    <!-- INBOX -->
+    <section id="page-inbox" class="page hidden">
+      <div class="page-head"><div><h2>Inbox</h2><p>Mentions and comments from your audience.</p></div></div>
+      <div class="tabs" id="inbox-tabs">
+        <button data-status="new" class="active">New</button>
+        <button data-status="flagged">Flagged for you</button>
+        <button data-status="handled">Handled</button>
+        <button data-status="all">All</button>
+      </div>
+      <div class="list" id="inbox"></div>
+    </section>
+
+    <!-- YOUTUBE -->
+    <section id="page-youtube" class="page hidden">
+      <div class="page-head"><div><h2>YouTube</h2><p>Upload a finished video. Jarvis writes the title, description and tags.</p></div></div>
+      <div id="yt-off" class="notice hidden">YouTube isn't enabled yet. Run <code>jarvis youtube-auth</code> and set <code>youtube: { enabled: true }</code> in config.yaml.</div>
+      <div class="grid two">
+        <form class="card" id="yt-form">
+          <h3>Upload a video</h3>
+          <div class="field"><label for="yt-file">Video file</label><input id="yt-file" type="file" accept="video/*" required></div>
+          <div class="field"><label for="yt-kind">Type</label>
+            <select id="yt-kind"><option value="long">Long video</option><option value="shorts">Short</option></select></div>
+          <div class="field"><label for="yt-notes">Notes for Jarvis (topic, key points, timestamps…)</label>
+            <textarea id="yt-notes" rows="4"></textarea></div>
+          <div class="progress hidden" id="yt-progress"><div></div></div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" id="yt-upload">Upload</button>
+            <button class="btn" type="button" data-job="videos">✦ Have Jarvis process the inbox</button>
+          </div>
+          <div id="yt-result" class="result muted"></div>
+        </form>
+        <div class="card"><h3>Waiting in the inbox</h3><div id="yt-inbox" class="list"></div></div>
+      </div>
+      <div class="card" style="margin-top:16px"><h3>Uploads</h3><div id="yt-queued" class="list"></div></div>
+    </section>
+
+    <!-- MARKETS -->
+    <section id="page-markets" class="page hidden">
+      <div class="page-head">
+        <div><h2>Markets desk</h2><p>Paper trading only: simulated money at real prices. Not financial advice.</p></div>
+        <div class="row">
+          <button class="btn" data-job="markets">✦ Run desk session</button>
+          <button class="btn bad" id="halt">Pause trading</button>
+        </div>
+      </div>
+      <div id="mk-off" class="notice hidden">Trading is disabled in config.yaml.</div>
+      <div class="grid stats" id="mk-stats"></div>
+      <div class="card" style="margin-top:16px"><h3>Open positions</h3><div class="table-wrap" id="mk-positions"></div></div>
+      <div class="grid two" style="margin-top:16px">
+        <div class="card"><h3>Trade journal</h3><div class="table-wrap" id="mk-trades"></div></div>
+        <div class="card"><h3>Watchlist</h3><div class="table-wrap" id="mk-watch"></div></div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast" class="toast hidden"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

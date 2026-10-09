@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jarvis · Sign in</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Ccircle cx=%2216%22 cy=%2216%22 r=%2214%22 fill=%22%2307101f%22 stroke=%22%2338d6ff%22 stroke-width=%223%22/%3E%3Ccircle cx=%2216%22 cy=%2216%22 r=%225%22 fill=%22%2338d6ff%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+    .login .card { width: min(380px, 100%); padding: 32px 28px; text-align: center; box-shadow: var(--glow); }
+    .login .reactor { width: 64px; height: 64px; margin: 0 auto 18px; }
+    .login h1 { letter-spacing: .4em; margin: 0 0 4px; font-size: 22px; }
+    .login form { margin-top: 24px; display: flex; flex-direction: column; gap: 12px; text-align: left; }
+    .login input { width: 100%; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+    .login input:focus { outline: none; border-color: var(--accent); box-shadow: var(--glow); }
+    .login .btn { justify-content: center; padding: 12px; }
+  </style>
+</head>
+<body>
+  <div class="login">
+    <div class="card">
+      <div class="reactor"></div>
+      <h1>JARVIS</h1>
+      <div class="muted">Identity verification required.</div>
+      <form id="f">
+        <input id="pw" type="password" placeholder="Password" autocomplete="current-password" autofocus required>
+        <button class="btn primary" id="go">Sign in</button>
+        <div id="err" class="bad hidden" role="alert"></div>
+      </form>
+    </div>
+  </div>
+  <script>
+    document.getElementById("f").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const go = document.getElementById("go"), err = document.getElementById("err");
+      go.disabled = true; err.classList.add("hidden");
+      const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: document.getElementById("pw").value }) });
+      if (r.ok) { location.href = "/"; return; }
+      err.textContent = "Access denied. Wrong password."; err.classList.remove("hidden"); go.disabled = false;
+    });
+  </script>
+</body>
+</html>

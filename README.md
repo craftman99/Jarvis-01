@@ -13,6 +13,8 @@ JARVIS: Right away, Boss. I've drafted 9 posts across X, Bluesky and Instagram, 
         All 9 are waiting for your approval (/pending).
 ```
 
+![Jarvis dashboard](docs/dashboard.png)
+
 ## What it does
 
 | Feature | Details |
@@ -46,13 +48,51 @@ jarvis init            # creates config.yaml and .env
 # 2. describe your brand, voice, topics and off-limits subjects in config.yaml
 # 3. enable the networks you want under `platforms:`
 
-jarvis chat            # talk to Jarvis
+jarvis web             # open the dashboard at http://localhost:8000
 ```
 
 Jarvis starts with **`dry_run: true`**: everything works, but "published" posts only go to the log.
 When you're happy with what it writes, add your platform keys to `.env` and set `dry_run: false`.
 
-### Run it 24/7
+## The website (dashboard)
+
+`jarvis web` starts Jarvis's control panel in your browser **and** runs autopilot in the background,
+so it's the only command you need. The pages are:
+
+| Page | What you do there |
+|---|---|
+| **Overview** | Counts of pending, scheduled and published posts and new mentions; one-click actions (plan today, check mentions, briefing, market desk); live activity feed; upcoming jobs |
+| **Talk to Jarvis** | Chat with him: "write 3 posts about…", "make #4 funnier", "what did best this week?" |
+| **Approvals** | Approve, edit or reject each post before it goes out, or approve everything at once |
+| **Content** | Everything scheduled, published, failed or rejected |
+| **Inbox** | Mentions and comments: reply yourself, have Jarvis draft a reply, or ignore. Flagged items wait for you here |
+| **YouTube** | Upload a video from your browser with notes, and Jarvis writes the title, description and tags |
+| **Markets** | Paper portfolio, P&L, trade journal with reasons, watchlist prices, pause/resume trading |
+
+It works on your phone too.
+
+**Password:** set `JARVIS_WEB_PASSWORD` in `.env`. Without a password the site only works on your own
+computer (`localhost`). Jarvis refuses to open it to the network unprotected.
+
+### Put the website online (use it from anywhere)
+
+Jarvis needs a computer that's always on. The easiest option is a small cloud server (DigitalOcean,
+Hetzner, Railway or Render; about $5–10/month). The repo includes a `Dockerfile`:
+
+```bash
+docker build -t jarvis .
+docker run -d --name jarvis -p 8000:8000 --env-file .env \
+  -v $PWD/config.yaml:/app/config.yaml -v $PWD/data:/app/data -v $PWD/videos:/app/videos jarvis
+```
+
+Then open `http://YOUR-SERVER-IP:8000`. For a real domain with HTTPS, put it behind Caddy or
+Cloudflare Tunnel (both free) and set `JARVIS_HTTPS=1`. Also set `JARVIS_SECRET` to a long random
+string so you stay logged in when the server restarts.
+
+> On Railway or Render: create a service from this GitHub repo (they detect the Dockerfile), add your
+> `.env` values as environment variables, and attach a persistent disk at `/app/data`.
+
+### Run it 24/7 without the website
 
 ```bash
 jarvis autopilot
@@ -151,6 +191,7 @@ jarvis/
   markets/       market data, memecoin scam checker, paper-trading engine with risk limits
   knowledge/     the trading playbook Jarvis follows
   telegram.py    phone remote control
+  web/           the dashboard website (FastAPI + a single-page app)
   cli.py         the `jarvis` command
 ```
 

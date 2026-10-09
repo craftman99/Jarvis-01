@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from . import ops
@@ -165,10 +166,10 @@ class Autopilot:
         return self.conversation.send(text)
 
     # ---- run ---------------------------------------------------------------
-    def run_forever(self) -> None:
+    def build_scheduler(self, background: bool = False):
         s = self.settings
-        sched = BlockingScheduler(timezone=s.tz, job_defaults={"coalesce": True, "max_instances": 1,
-                                                              "misfire_grace_time": 300})
+        cls = BackgroundScheduler if background else BlockingScheduler
+        sched = cls(timezone=s.tz, job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 300})
 
         def at(hhmm: str) -> dict:
             h, m = hhmm.split(":")
@@ -192,7 +193,10 @@ class Autopilot:
                  ", ".join(self.platforms) or "none")
         self.notify(f"🤖 Jarvis online. Mode: {s.mode}{' (dry run)' if s.dry_run else ''}. "
                     f"Managing: {', '.join(self.platforms) or 'no platforms yet'}.")
-        sched.start()
+        return sched
+
+    def run_forever(self) -> None:
+        self.build_scheduler().start()
 
     def _safe(self, fn):
         def wrapper():
