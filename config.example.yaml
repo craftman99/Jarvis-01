@@ -1,0 +1,51 @@
+# Copy to config.yaml (or run `jarvis init`) and make it yours.
+
+owner_name: "Boss"            # what Jarvis calls you
+brand_name: "My Brand"
+brand_description: >
+  A creator sharing practical tips about building things, productivity and tech.
+brand_voice: >
+  Confident, witty, helpful. Short punchy sentences. No corporate jargon.
+  Light humor is welcome; never mean-spirited.
+audience: "Indie makers, developers and curious people who like to learn."
+topics:
+  - productivity tips
+  - AI tools
+  - behind-the-scenes of building products
+avoid:                         # topics/words Jarvis must never post about
+  - politics
+  - religion
+  - competitor names
+hashtags_style: "0-2 relevant hashtags, never hashtag spam"
+
+# review    -> Jarvis drafts everything, you approve before anything goes public (recommended to start)
+# autopilot -> Jarvis publishes and replies on its own, within the limits below
+mode: review
+
+# true = never touch real accounts; posts are "published" to the log only. Turn off when ready.
+dry_run: true
+
+timezone: "America/New_York"
+
+model: "claude-opus-5-5"
+effort: "high"                 # low | medium | high | xhigh | max
+
+platforms:
+  x:         { enabled: false, posts_per_day: 3 }
+  bluesky:   { enabled: false, posts_per_day: 2 }
+  mastodon:  { enabled: false, posts_per_day: 2 }
+  facebook:  { enabled: false, posts_per_day: 1 }
+  instagram: { enabled: false, posts_per_day: 1 }   # Instagram posts require an image URL
+
+schedule:
+  plan_content_at: "07:00"     # daily content planning session
+  posting_times: ["09:00", "13:00", "18:30"]
+  check_mentions_every_minutes: 15
+  refresh_metrics_every_minutes: 60
+  daily_briefing_at: "21:00"
+
+engagement:
+  auto_reply: true             # reply to mentions/comments (still needs approval in review mode)
+  max_replies_per_run: 10
+
+db_path: "data/jarvis.db"

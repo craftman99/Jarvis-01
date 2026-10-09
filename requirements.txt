@@ -1,0 +1,10 @@
+anthropic>=1.12
+apscheduler>=3.10,<4
+python-dotenv>=1.0
+pyyaml>=6.0
+requests>=2.31
+rich>=13.0
+# Platform SDKs - only needed for the networks you enable
+tweepy>=4.14
+atproto>=0.0.55
+Mastodon.py>=1.8

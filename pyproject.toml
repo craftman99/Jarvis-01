@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis-social"
+version = "0.1.0"
+description = "Jarvis: an AI assistant (powered by Claude) that runs your social media channels."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "anthropic>=1.12",
+  "apscheduler>=3.10,<4",
+  "python-dotenv>=1.0",
+  "pyyaml>=6.0",
+  "requests>=2.31",
+  "rich>=13.0",
+]
+
+[project.optional-dependencies]
+x = ["tweepy>=4.14"]
+bluesky = ["atproto>=0.0.55"]
+mastodon = ["Mastodon.py>=1.8"]
+all = ["tweepy>=4.14", "atproto>=0.0.55", "Mastodon.py>=1.8"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+jarvis = "jarvis.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["jarvis*"]
